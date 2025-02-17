@@ -4,60 +4,108 @@
   <meta charset="UTF-8">
   <title>Control MIDI por Cámara</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    #controls { margin-top: 10px; }
-    canvas { border: 1px solid #000; }
-    video { display: none; } /* Se oculta el elemento video, pues se muestra el canvas */
+    /* Estilos para centrar y mejorar la apariencia */
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f0f0f0;
+    }
+    #container {
+      width: 90%;
+      max-width: 800px;
+      text-align: center;
+      background: #fff;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      border-radius: 8px;
+    }
+    h1 {
+      margin-bottom: 10px;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      margin-top: 10px;
+      border-radius: 4px;
+    }
+    video {
+      display: none;
+    }
+    #controls {
+      margin-top: 15px;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background-color: #007BFF;
+      color: #fff;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    select {
+      padding: 5px;
+      font-size: 16px;
+      margin: 0 5px;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
-  <h1>Control MIDI por Cámara</h1>
-  
-  <!-- Elementos de video y canvas -->
-  <video id="video" autoplay></video>
-  <canvas id="canvas" width="640" height="480"></canvas>
-  
-  <!-- Controles: calibración, selección de escala y botones de inicio/detención -->
-  <div id="controls">
-    <button id="calibrateNoteBtn">Calibrar Color Nota</button>
-    <button id="calibrateVolumeBtn">Calibrar Color Volumen</button>
-    <br><br>
-    <label for="rootNote">Tonalidad (Raíz): </label>
-    <select id="rootNote">
-      <!-- Los valores corresponden al número MIDI del tono medio (C4=60, etc.) -->
-      <option value="60">Do (C)</option>
-      <option value="62">Re (D)</option>
-      <option value="64">Mi (E)</option>
-      <option value="65">Fa (F)</option>
-      <option value="67">Sol (G)</option>
-      <option value="69">La (A)</option>
-      <option value="71">Si (B)</option>
-    </select>
-    <label for="scaleType">Escala: </label>
-    <select id="scaleType">
-      <option value="major">Mayor</option>
-      <option value="minor">Menor</option>
-    </select>
-    <br><br>
-    <button id="startBtn">Inicio</button>
-    <button id="stopBtn">Detención</button>
+  <div id="container">
+    <h1>Control MIDI por Cámara</h1>
+    
+    <!-- Elementos de video y canvas -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    
+    <!-- Controles: Se mantiene la opción de cambiar la tonalidad y escala, y botones de inicio y detención -->
+    <div id="controls">
+      <label for="rootNote">Tonalidad (Raíz): </label>
+      <select id="rootNote">
+        <option value="60">Do (C)</option>
+        <option value="62">Re (D)</option>
+        <option value="64">Mi (E)</option>
+        <option value="65">Fa (F)</option>
+        <option value="67">Sol (G)</option>
+        <option value="69">La (A)</option>
+        <option value="71">Si (B)</option>
+      </select>
+      <label for="scaleType">Escala: </label>
+      <select id="scaleType">
+        <option value="major">Mayor</option>
+        <option value="minor">Menor</option>
+      </select>
+      <br><br>
+      <button id="startBtn">Inicio</button>
+      <button id="stopBtn">Detención</button>
+    </div>
+    
+    <div id="status"></div>
   </div>
-  
-  <div id="status"></div>
-  
+
   <script>
     // Elementos de la página
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const statusDiv = document.getElementById('status');
-    
+
     // Variables de calibración y control
     let calibrateNoteColor = null;    // Color calibrado para nota
     let calibrateVolumeColor = null;  // Color calibrado para volumen
-    let streaming = false;
     let processingInterval;
-    let currentMIDINote = null;         // Para hacer "note off" cuando cambie la nota
+    let currentMIDINote = null;         // Para enviar "note off" al cambiar la nota
     let midiAccess = null;
     let midiOutput = null;
 
@@ -72,8 +120,8 @@
     };
 
     /**
-     * Función para mapear la posición vertical (y) del objeto de nota a un valor MIDI
-     * según la escala seleccionada. Se construye un array de notas dentro del rango.
+     * Mapea la posición vertical (y) del objeto de nota a una nota MIDI,
+     * usando la tonalidad y escala seleccionadas.
      */
     function mapYToNote(y) {
       const rootNote = parseInt(document.getElementById('rootNote').value);
@@ -98,8 +146,7 @@
     }
 
     /**
-     * Función para mapear la posición vertical (y) del objeto de volumen a un valor (0-127)
-     * Asumiendo que en la parte superior (y = 0) es máximo (127) y en la inferior es 0.
+     * Mapea la posición vertical (y) del objeto de volumen a un valor entre 0 y 127.
      */
     function mapYToVolume(y) {
       let vol = Math.floor((1 - y / canvas.height) * 127);
@@ -109,8 +156,7 @@
     }
 
     /**
-     * Función que calcula el color promedio de una región del canvas.
-     * Se usará durante la calibración.
+     * Calcula el color promedio de una región del canvas (para la calibración).
      */
     function getAverageColor(imageData, startX, startY, width, height) {
       const data = imageData.data;
@@ -128,7 +174,7 @@
     }
 
     /**
-     * Función de distancia entre dos colores en espacio RGB.
+     * Calcula la distancia entre dos colores en espacio RGB.
      */
     function colorDistance(c1, c2) {
       return Math.sqrt((c1.r - c2.r) ** 2 + (c1.g - c2.g) ** 2 + (c1.b - c2.b) ** 2);
@@ -136,7 +182,7 @@
 
     /**
      * Dado un imageData y un color objetivo, busca el centroide (posición promedio)
-     * de todos los píxeles que estén dentro de un umbral de diferencia.
+     * de todos los píxeles que estén dentro de un umbral.
      */
     function findColorCentroid(imageData, targetColor, threshold = 50) {
       const data = imageData.data;
@@ -161,23 +207,134 @@
     }
 
     /**
-     * Inicia la cámara usando getUserMedia y asigna el stream al elemento video.
+     * Inicia la cámara usando getUserMedia y, una vez que el video está listo,
+     * procede a calibrar los colores para nota y volumen.
      */
     function startCamera() {
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(function (stream) {
           video.srcObject = stream;
           video.play();
+          video.addEventListener("canplay", function() {
+            // Ajusta el canvas al tamaño del video
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            // Calibración automática:
+            calibrateNoteColor = calibrateColor("Nota");
+            calibrateVolumeColor = calibrateColor("Volumen");
+            alert("Calibración completada.");
+            startProcessing();
+          }, { once: true });
         })
         .catch(function (err) {
           console.error("Error al acceder a la cámara: " + err);
+          statusDiv.innerText = "Error al acceder a la cámara.";
         });
+    }
+
+    /**
+     * Inicia el procesamiento de frames (aproximadamente 20 fps).
+     */
+    function startProcessing() {
+      processingInterval = setInterval(processFrame, 50);
+    }
+
+    /**
+     * Detiene el procesamiento y envía un "note off" si hay nota activa.
+     */
+    function stopProcessing() {
+      clearInterval(processingInterval);
+      if (currentMIDINote !== null && midiOutput) {
+        midiOutput.send([0x80, currentMIDINote, 0]);
+        currentMIDINote = null;
+      }
+    }
+
+    /**
+     * Procesa cada frame: dibuja el video en el canvas, analiza la imagen,
+     * busca los colores calibrados y mapea sus posiciones a valores MIDI.
+     */
+    function processFrame() {
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
+      
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      if (calibrateNoteColor) {
+        const notePos = findColorCentroid(imageData, calibrateNoteColor);
+        if (notePos) {
+          // Dibuja un círculo rojo en la posición detectada para Nota
+          ctx.beginPath();
+          ctx.arc(notePos.x, notePos.y, 10, 0, 2 * Math.PI);
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+          
+          const midiNote = mapYToNote(notePos.y);
+          
+          if (midiOutput) {
+            if (currentMIDINote !== midiNote) {
+              if (currentMIDINote !== null) {
+                midiOutput.send([0x80, currentMIDINote, 0]);
+              }
+              currentMIDINote = midiNote;
+              let velocity = 100;
+              if (calibrateVolumeColor) {
+                const volPos = findColorCentroid(imageData, calibrateVolumeColor);
+                if (volPos) {
+                  velocity = mapYToVolume(volPos.y);
+                  // Dibuja un círculo azul en la posición detectada para Volumen
+                  ctx.beginPath();
+                  ctx.arc(volPos.x, volPos.y, 10, 0, 2 * Math.PI);
+                  ctx.strokeStyle = 'blue';
+                  ctx.lineWidth = 3;
+                  ctx.stroke();
+                }
+              }
+              midiOutput.send([0x90, currentMIDINote, velocity]);
+            } else {
+              // Actualiza el volumen en tiempo real mediante un CC
+              if (calibrateVolumeColor) {
+                const volPos = findColorCentroid(imageData, calibrateVolumeColor);
+                if (volPos) {
+                  const velocity = mapYToVolume(volPos.y);
+                  midiOutput.send([0xB0, 7, velocity]);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /**
+     * Función para calibrar un color (Nota o Volumen).
+     * Se le pide al usuario que coloque el objeto deseado en el centro del canvas,
+     * se captura el color y se solicita confirmación.
+     */
+    function calibrateColor(option) {
+      let accepted = false;
+      let color;
+      while (!accepted) {
+        alert("Coloca el objeto del color deseado para " + option + " en el centro y presiona OK para capturar.");
+        // Dibuja el frame actual en el canvas para asegurar la imagen actual
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const regionWidth = 50, regionHeight = 50;
+        const startX = Math.floor((canvas.width - regionWidth) / 2);
+        const startY = Math.floor((canvas.height - regionHeight) / 2);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        color = getAverageColor(imageData, startX, startY, regionWidth, regionHeight);
+        accepted = confirm("El color detectado para " + option + " es RGB(" +
+                           Math.round(color.r) + ", " +
+                           Math.round(color.g) + ", " +
+                           Math.round(color.b) + "). ¿Deseas usar este color?");
+      }
+      return color;
     }
 
     // Configuración de la Web MIDI API
     function onMIDISuccess(midi) {
       midiAccess = midi;
-      // Selecciona la primera salida disponible
       const outputs = Array.from(midiAccess.outputs.values());
       if (outputs.length > 0) {
         midiOutput = outputs[0];
@@ -196,121 +353,11 @@
       statusDiv.innerText = "El navegador no soporta MIDI.";
     }
 
-    /**
-     * Inicia el procesamiento de los frames del video.
-     */
-    function startProcessing() {
-      streaming = true;
-      processingInterval = setInterval(processFrame, 50); // Aproximadamente 20 fps
-    }
-
-    /**
-     * Detiene el procesamiento y envía un note off si hay nota activa.
-     */
-    function stopProcessing() {
-      streaming = false;
-      clearInterval(processingInterval);
-      if (currentMIDINote !== null && midiOutput) {
-        midiOutput.send([0x80, currentMIDINote, 0]); // Note off
-        currentMIDINote = null;
-      }
-    }
-
-    /**
-     * Función que procesa cada frame: dibuja el video en el canvas, analiza la imagen,
-     * busca los colores calibrados y mapea sus posiciones a valores MIDI.
-     */
-    function processFrame() {
-      if (video.videoWidth === 0 || video.videoHeight === 0) return;
-      
-      // Ajusta el canvas al tamaño del video
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      
-      // Si se calibró el color para nota, busca su centroide
-      if (calibrateNoteColor) {
-        const notePos = findColorCentroid(imageData, calibrateNoteColor);
-        if (notePos) {
-          // Dibuja un círculo rojo en la posición detectada
-          ctx.beginPath();
-          ctx.arc(notePos.x, notePos.y, 10, 0, 2 * Math.PI);
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          
-          // Mapea la posición vertical a una nota MIDI en la escala elegida
-          const midiNote = mapYToNote(notePos.y);
-          
-          if (midiOutput) {
-            if (currentMIDINote !== midiNote) {
-              // Si la nota cambió, envía note off de la anterior (si existe)
-              if (currentMIDINote !== null) {
-                midiOutput.send([0x80, currentMIDINote, 0]);
-              }
-              currentMIDINote = midiNote;
-              // Se utiliza un valor de velocidad por defecto (100) si no se detecta el color de volumen
-              let velocity = 100;
-              // Si se calibró el color para volumen, se actualiza la velocidad
-              if (calibrateVolumeColor) {
-                const volPos = findColorCentroid(imageData, calibrateVolumeColor);
-                if (volPos) {
-                  velocity = mapYToVolume(volPos.y);
-                  // Dibuja un círculo azul en la posición del volumen
-                  ctx.beginPath();
-                  ctx.arc(volPos.x, volPos.y, 10, 0, 2 * Math.PI);
-                  ctx.strokeStyle = 'blue';
-                  ctx.lineWidth = 3;
-                  ctx.stroke();
-                }
-              }
-              // Envia note on con la nota y velocidad actual
-              midiOutput.send([0x90, currentMIDINote, velocity]);
-            } else {
-              // Si la nota no cambió, se puede actualizar el volumen en tiempo real mediante un CC
-              if (calibrateVolumeColor) {
-                const volPos = findColorCentroid(imageData, calibrateVolumeColor);
-                if (volPos) {
-                  const velocity = mapYToVolume(volPos.y);
-                  // Se envía un mensaje CC (por ejemplo, controlador 7 para volumen)
-                  midiOutput.send([0xB0, 7, velocity]);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Botón para calibrar el color de la nota:
-    // Se toma el promedio del color en una región central del canvas.
-    document.getElementById('calibrateNoteBtn').addEventListener('click', function () {
-      const regionWidth = 50, regionHeight = 50;
-      const startX = Math.floor((canvas.width - regionWidth) / 2);
-      const startY = Math.floor((canvas.height - regionHeight) / 2);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      calibrateNoteColor = getAverageColor(imageData, startX, startY, regionWidth, regionHeight);
-      alert("Color de Nota calibrado");
-    });
-
-    // Botón para calibrar el color de volumen
-    document.getElementById('calibrateVolumeBtn').addEventListener('click', function () {
-      const regionWidth = 50, regionHeight = 50;
-      const startX = Math.floor((canvas.width - regionWidth) / 2);
-      const startY = Math.floor((canvas.height - regionHeight) / 2);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      calibrateVolumeColor = getAverageColor(imageData, startX, startY, regionWidth, regionHeight);
-      alert("Color de Volumen calibrado");
-    });
-
-    // Botón de inicio: inicia la cámara y el procesamiento
+    // Eventos de los botones de Inicio y Detención
     document.getElementById('startBtn').addEventListener('click', function () {
       startCamera();
-      startProcessing();
     });
 
-    // Botón de detención: para el procesamiento y detiene la cámara
     document.getElementById('stopBtn').addEventListener('click', function () {
       stopProcessing();
       if (video.srcObject) {
